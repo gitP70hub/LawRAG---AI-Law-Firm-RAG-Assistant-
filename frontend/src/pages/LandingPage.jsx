@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 
 /* ── Icons ── */
 const Icons = {
-  Scale: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
-  Calendar: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
-  Shield: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2-1 4-2 7-2 2.82 0 5.62.9 8 2 1 .5 1 1 1 2z"/></svg>,
-  Pin: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" x2="12" y1="17" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3h0a3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>,
-  Lock: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
-  Sparkle: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none" {...props}><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+  Scale: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" /><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" /><path d="M7 21h10" /><path d="M12 3v18" /><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" /></svg>,
+  Calendar: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></svg>,
+  Shield: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2-1 4-2 7-2 2.82 0 5.62.9 8 2 1 .5 1 1 1 2z" /></svg>,
+  Pin: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" x2="12" y1="17" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3h0a3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" /></svg>,
+  Lock: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>,
+  Sparkle: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none" {...props}><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
 };
 
 const USPS = [
@@ -27,7 +27,7 @@ export default function LandingPage() {
     link.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap';
     link.rel = 'stylesheet';
     document.head.appendChild(link);
-    
+
     // Trigger animations right after mount
     const id = requestAnimationFrame(() => setGo(true));
     return () => {
@@ -170,11 +170,11 @@ export default function LandingPage() {
       `}</style>
 
       {/* ── AMBIENT BACKGROUND ORBS ── */}
-      <div style={{ position:'absolute', top:'-20%', left:'-10%', width:'50vw', height:'50vw', background:'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 60%)', filter:'blur(60px)', animation:'floatBgY 15s ease-in-out infinite', zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position:'absolute', bottom:'-20%', right:'-10%', width:'60vw', height:'60vw', background:'radial-gradient(circle, rgba(168,85,247,0.1) 0%, transparent 60%)', filter:'blur(80px)', animation:'floatBgX 20s ease-in-out infinite', zIndex: 0, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '-20%', left: '-10%', width: '50vw', height: '50vw', background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 60%)', filter: 'blur(60px)', animation: 'floatBgY 15s ease-in-out infinite', zIndex: 0, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '-20%', right: '-10%', width: '60vw', height: '60vw', background: 'radial-gradient(circle, rgba(168,85,247,0.1) 0%, transparent 60%)', filter: 'blur(80px)', animation: 'floatBgX 20s ease-in-out infinite', zIndex: 0, pointerEvents: 'none' }} />
 
       <div className={`lp-root${go ? ' go' : ''}`} style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
-        
+
         {/* ══ NAVBAR ══ */}
         <nav className="anim-reveal-1" style={{ flexShrink: 0, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 5%', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.6)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -193,16 +193,16 @@ export default function LandingPage() {
 
         {/* ══ MAIN HERO ══ */}
         <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 5%', maxWidth: 1400, margin: '0 auto', width: '100%', gap: 40 }}>
-          
+
           {/* LEFT: Copywriting */}
           <div style={{ maxWidth: 580, zIndex: 10 }}>
-            <div className="anim-reveal-1" style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'6px 16px', borderRadius:100, background:'rgba(255,255,255,0.6)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.8)', boxShadow:'0 4px 12px rgba(0,0,0,0.03)', color:'#4f46e5', fontWeight:700, fontSize:12, letterSpacing:'0.05em', marginBottom:28 }}>
-               <Icons.Sparkle width="14" height="14" />
-               Next-Generation Legal AI
+            <div className="anim-reveal-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.8)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', color: '#4f46e5', fontWeight: 700, fontSize: 12, letterSpacing: '0.05em', marginBottom: 28 }}>
+              <Icons.Sparkle width="14" height="14" />
+              Next-Generation Legal AI
             </div>
 
             <h1 className="hero-title anim-reveal-2" style={{ marginBottom: 24 }}>
-              Legal Intelligence,<br/>
+              Legal Intelligence,<br />
               Powered by <span className="text-gradient">Your Documents.</span>
             </h1>
 
@@ -215,7 +215,7 @@ export default function LandingPage() {
                 Experience LawRAG
               </button>
             </div>
-            
+
             <div className="anim-reveal-5" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 48 }}>
               {USPS.map((u, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(255,255,255,0.5)', backdropFilter: 'blur(10px)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 600, color: '#334155', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={e => e.currentTarget.style.transform = 'none'}>
@@ -228,7 +228,7 @@ export default function LandingPage() {
 
           {/* RIGHT: Floating 3D Composition */}
           <div className="anim-reveal-4" style={{ position: 'relative', width: 500, height: 480, perspective: 1200, display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
-            
+
             {/* Background glowing orb for contrast under the cards */}
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 280, height: 280, borderRadius: '50%', background: 'linear-gradient(135deg, rgba(79,70,229,0.35), rgba(168,85,247,0.35))', filter: 'blur(45px)', zIndex: 0, animation: 'pulseBg 8s ease-in-out infinite' }} />
 
