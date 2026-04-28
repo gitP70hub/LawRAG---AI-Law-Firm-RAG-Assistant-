@@ -181,12 +181,7 @@ export default function LandingPage() {
             </button>
           </div>
 
-          {/* tech tags */}
-          <div className="flex items-center justify-center gap-3 flex-wrap">
-            {['LangChain', 'ChromaDB', 'HuggingFace', 'FastAPI', 'React'].map(t => (
-              <span key={t} className="badge-tag text-xs font-medium px-3 py-1 rounded-full">{t}</span>
-            ))}
-          </div>
+
         </div>
 
         {/* scroll */}
@@ -328,10 +323,7 @@ export default function LandingPage() {
 
       {/* ══ FOOTER ════════════════════════════════════════════ */}
       <footer className="py-8 px-6 text-center" style={{ background:'#ffffff', borderTop:'1px solid #e2e8f0' }}>
-        <p className="text-xs mb-1" style={{ color:'#94a3b8' }}>
-          Built with{' '}
-          <span style={{ color:'#64748b' }}>LangChain · HuggingFace · FastAPI · React · ChromaDB</span>
-        </p>
+
         <p className="text-xs" style={{ color:'#cbd5e1' }}>LawRAG © 2026</p>
       </footer>
 
