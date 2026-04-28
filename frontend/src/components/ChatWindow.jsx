@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Bot, User, ChevronDown, ChevronUp, Trash2,
-  Scale, Briefcase, Sparkles, FileText, AlertCircle,
+  Scale, Sparkles, FileText, AlertCircle,
 } from 'lucide-react';
 import { sendChat, getHistory, clearChat } from '../api/client';
 
@@ -35,12 +35,12 @@ const SourcePill = ({ src, idx }) => (
   </div>
 );
 
-/* ─── Single message bubble ────────────────────────────── */
-const Bubble = ({ msg, role }) => {
-  const isUser   = msg.role === 'user';
-  const isError  = msg.role === 'assistant' && msg.content?.startsWith('⚠️');
+/* ─── Message bubble ───────────────────────────────────── */
+const Bubble = ({ msg }) => {
+  const isUser  = msg.role === 'user';
+  const isError = msg.role === 'assistant' && msg.content?.startsWith('⚠️');
   const [showSrc, setShowSrc] = useState(false);
-  const sources  = msg.sources || [];
+  const sources = msg.sources || [];
 
   return (
     <div className={`flex gap-3 animate-slide-up ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -68,12 +68,12 @@ const Bubble = ({ msg, role }) => {
             ? 'bg-indigo-600 text-white rounded-tr-sm shadow-sm'
             : isError
               ? 'bg-red-50 text-red-800 border border-red-200 rounded-tl-sm'
-              : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-sm shadow-card',
+              : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-sm shadow-sm',
         ].join(' ')}>
-          <div className={isUser ? '' : 'prose-legal'}>{msg.content}</div>
+          {msg.content}
         </div>
 
-        {/* Source citations */}
+        {/* Sources */}
         {!isUser && sources.length > 0 && (
           <div className="w-full">
             <button
@@ -82,7 +82,7 @@ const Bubble = ({ msg, role }) => {
                          transition-colors mt-0.5 px-1"
             >
               {showSrc ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-              {sources.length} source{sources.length !== 1 ? 's' : ''} cited
+              {sources.length} source{sources.length !== 1 ? 's' : ''} used
             </button>
             {showSrc && (
               <div className="mt-2 space-y-1.5">
@@ -98,7 +98,7 @@ const Bubble = ({ msg, role }) => {
   );
 };
 
-/* ─── Typing indicator ─────────────────────────────────── */
+/* ─── Typing dots ──────────────────────────────────────── */
 const TypingDots = () => (
   <div className="flex gap-3 animate-fade-in">
     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900
@@ -106,7 +106,7 @@ const TypingDots = () => (
       <Sparkles size={12} className="text-indigo-300" />
     </div>
     <div className="bg-white border border-slate-200/80 rounded-2xl rounded-tl-sm
-                    px-4 py-3 shadow-card flex items-center gap-1.5 h-10">
+                    px-4 py-3 shadow-sm flex items-center gap-1.5 h-10">
       {[0, 1, 2].map(i => (
         <span
           key={i}
@@ -118,29 +118,35 @@ const TypingDots = () => (
   </div>
 );
 
-/* ─── Empty state ──────────────────────────────────────── */
-const EmptyChat = ({ role }) => (
-  <div className="flex flex-col items-center justify-center h-full text-center py-16 px-6">
+/* ─── Suggested questions ──────────────────────────────── */
+const SUGGESTIONS = [
+  'What are the key facts of this case?',
+  'What are my rights in this situation?',
+  'What should be my next steps?',
+  'Summarise the important dates and deadlines',
+];
+
+const EmptyChat = ({ onSuggest }) => (
+  <div className="flex flex-col items-center justify-center h-full text-center py-12 px-6">
     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-indigo-50
                     flex items-center justify-center mb-4 shadow-sm">
       <Scale size={24} className="text-indigo-500" />
     </div>
-    <p className="font-semibold text-slate-700 mb-1">Ask LawRAG anything about this case</p>
+    <p className="font-semibold text-slate-700 mb-1">Ask anything about your case</p>
     <p className="text-sm text-slate-400 max-w-xs leading-relaxed">
-      {role === 'lawyer'
-        ? 'Lawyer mode — detailed legal reasoning, citations, and strategy.'
-        : 'Client mode — plain-language explanations of your legal situation.'}
+      Ask in plain English — no legal jargon needed. AI will search your documents and answer instantly.
     </p>
-    <div className="mt-5 flex flex-col gap-2 w-full max-w-xs">
-      {(role === 'lawyer'
-        ? ['Summarise the key legal risks in this case', 'Identify breaches of contract', 'Extract key dates and deadlines']
-        : ['What does this contract mean for me?', 'Do I have a strong case?', 'What are my next steps?']
-      ).map((q) => (
-        <div key={q}
-          className="text-xs text-left px-3 py-2 rounded-xl bg-slate-50 border border-slate-200
-                     text-slate-500 cursor-default leading-snug">
-          "{q}"
-        </div>
+    <div className="mt-5 flex flex-col gap-2 w-full max-w-sm">
+      {SUGGESTIONS.map((q) => (
+        <button
+          key={q}
+          onClick={() => onSuggest(q)}
+          className="text-xs text-left px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200
+                     text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700
+                     transition-all leading-snug"
+        >
+          {q}
+        </button>
       ))}
     </div>
   </div>
@@ -152,9 +158,7 @@ export default function ChatWindow({ caseId }) {
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [role,     setRole]     = useState('client');
-  const bottomRef  = useRef(null);
-  const inputRef   = useRef(null);
+  const bottomRef   = useRef(null);
   const textareaRef = useRef(null);
 
   /* Load history */
@@ -172,24 +176,23 @@ export default function ChatWindow({ caseId }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
   /* Auto-resize textarea */
-  const resizeTextarea = () => {
+  const resize = () => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = 'auto';
     textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 128) + 'px';
   };
 
   /* Send */
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || loading || !caseId) return;
-    const userMsg = { role: 'user', content: text, created_at: new Date().toISOString() };
-    setMessages(p => [...p, userMsg]);
+  const handleSend = async (text = input) => {
+    const msg = text.trim();
+    if (!msg || loading || !caseId) return;
+    setMessages(p => [...p, { role: 'user', content: msg, created_at: new Date().toISOString() }]);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setLoading(true);
     try {
       const { data } = await sendChat({
-        case_id: caseId, message: text, role, prompt_type: role, top_k: 5,
+        case_id: caseId, message: msg, role: 'client', prompt_type: 'client', top_k: 5,
       });
       setMessages(p => [...p, {
         role: 'assistant', content: data.answer,
@@ -201,10 +204,7 @@ export default function ChatWindow({ caseId }) {
         content: `⚠️ ${err.message || 'Failed to get a response. Please try again.'}`,
         created_at: new Date().toISOString(),
       }]);
-    } finally {
-      setLoading(false);
-      inputRef.current?.focus();
-    }
+    } finally { setLoading(false); }
   };
 
   const handleClear = async () => {
@@ -218,8 +218,7 @@ export default function ChatWindow({ caseId }) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200/80
-                    shadow-card overflow-hidden">
+    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100
                       bg-gradient-to-r from-slate-50 to-white flex-shrink-0">
@@ -229,97 +228,57 @@ export default function ChatWindow({ caseId }) {
             <Sparkles size={13} className="text-white" />
           </div>
           <div>
-            <span className="font-semibold text-slate-800 text-sm">LawRAG</span>
-            <span className="text-[11px] text-slate-400 ml-1.5">RAG · Legal Intelligence</span>
+            <span className="font-semibold text-slate-800 text-sm">LawRAG AI</span>
+            <span className="text-[11px] text-slate-400 ml-1.5">Legal Assistant</span>
           </div>
           {messages.length > 0 && (
-            <span className="text-[10px] text-slate-300 border border-slate-200 rounded-full
-                             px-2 py-0.5 ml-1">
-              {messages.length} msg{messages.length !== 1 ? 's' : ''}
+            <span className="text-[10px] text-slate-300 border border-slate-200 rounded-full px-2 py-0.5 ml-1">
+              {messages.length} message{messages.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Role toggle */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 gap-0.5">
-            <button
-              onClick={() => setRole('client')}
-              className={[
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold',
-                'transition-all duration-150',
-                role === 'client'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
-              ].join(' ')}
-            >
-              <User size={11} /> Client
-            </button>
-            <button
-              onClick={() => setRole('lawyer')}
-              className={[
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold',
-                'transition-all duration-150',
-                role === 'lawyer'
-                  ? 'bg-slate-800 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
-              ].join(' ')}
-            >
-              <Briefcase size={11} /> Lawyer
-            </button>
-          </div>
-
-          <button
-            onClick={handleClear}
-            title="Clear history"
-            className="btn-ghost text-slate-400 hover:text-red-500 hover:bg-red-50"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
+        <button
+          onClick={handleClear}
+          title="Clear history"
+          className="btn-ghost text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
 
-      {/* ── Messages area ── */}
+      {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5 bg-[#fafbfc]">
         {fetching && (
           <div className="flex justify-center py-12">
-            <div className="spinner w-6 h-6" />
+            <div className="w-6 h-6 rounded-full border-2 border-indigo-200 border-t-indigo-500 animate-spin" />
           </div>
         )}
 
         {!fetching && messages.length === 0 && (
-          <EmptyChat role={role} />
+          <EmptyChat onSuggest={(q) => { setInput(q); handleSend(q); }} />
         )}
 
-        {messages.map((msg, i) => <Bubble key={i} msg={msg} role={role} />)}
+        {messages.map((msg, i) => <Bubble key={i} msg={msg} />)}
         {loading && <TypingDots />}
         <div ref={bottomRef} />
       </div>
 
       {/* ── Input bar ── */}
       <div className="flex-shrink-0 px-4 py-3 border-t border-slate-100 bg-white">
-        {!caseId && (
-          <p className="text-[11px] text-amber-600 text-center mb-2 py-1 px-3 bg-amber-50
-                        rounded-lg border border-amber-200">
-            Select a case above to start chatting
-          </p>
-        )}
         <div className="flex gap-2 items-end">
           <textarea
-            ref={el => { textareaRef.current = el; inputRef.current = el; }}
+            ref={textareaRef}
             value={input}
-            onChange={e => { setInput(e.target.value); resizeTextarea(); }}
+            onChange={e => { setInput(e.target.value); resize(); }}
             onKeyDown={handleKey}
             disabled={!caseId || loading}
-            placeholder={caseId
-              ? `Ask a ${role === 'lawyer' ? 'legal' : ''} question… (Enter to send)`
-              : 'Select a case first'}
+            placeholder={caseId ? 'Ask a question about your case… (Enter to send)' : 'Select a case first'}
             rows={1}
-            className="input flex-1 resize-none min-h-[42px] max-h-32 py-2.5 leading-relaxed
-                       bg-slate-50 focus:bg-white"
+            className="input flex-1 resize-none min-h-[42px] max-h-32 py-2.5 leading-relaxed bg-slate-50 focus:bg-white"
           />
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={!caseId || loading || !input.trim()}
             className="btn-primary h-[42px] w-[42px] p-0 justify-center rounded-xl flex-shrink-0"
           >
@@ -328,9 +287,7 @@ export default function ChatWindow({ caseId }) {
               : <Send size={15} />}
           </button>
         </div>
-        <p className="text-[10px] text-slate-300 text-right mt-1.5 pr-1">
-          Shift+Enter for newline
-        </p>
+        <p className="text-[10px] text-slate-300 text-right mt-1.5 pr-1">Shift+Enter for newline</p>
       </div>
     </div>
   );
