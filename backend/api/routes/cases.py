@@ -292,14 +292,22 @@ async def get_case_timeline(
     """
     case = await _get_case_or_404(case_id, db)
 
-    # ── Cache hit ─────────────────────────────────────────────────────────────
-    if case.timeline_data and not force_regenerate:
+    # ── Cache hit — only valid if list is non-empty ───────────────────────────
+    # An empty [] means a previous LLM call failed — treat as cache miss.
+    cached_data = case.timeline_data
+    has_valid_cache = (
+        cached_data is not None
+        and isinstance(cached_data, list)
+        and len(cached_data) > 0
+        and not force_regenerate
+    )
+    if has_valid_cache:
         logger.info(
             f"Timeline cache hit for case {str(case_id)[:8]}… "
-            f"({len(case.timeline_data)} events, "
+            f"({len(cached_data)} events, "
             f"generated {case.timeline_generated_at})."
         )
-        events = timeline_from_json(case.timeline_data)
+        events = timeline_from_json(cached_data)
         return TimelineResponse(
             case_id      = case_id,
             total_events = len(events),

@@ -2,30 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Scale, MessageSquare, FileText, Clock,
-  Shield, Search, Loader2, Trash2, CheckCircle,
-  AlertCircle, UploadCloud, Info,
+  Loader2, Trash2, CheckCircle, AlertCircle, UploadCloud, Info,
 } from 'lucide-react';
 import ChatWindow     from '../components/ChatWindow';
 import DocumentUpload from '../components/DocumentUpload';
 import CaseTimeline   from '../components/CaseTimeline';
-import PrecedentFinder from '../components/PrecedentFinder';
-import ClauseAnalyzer  from '../components/ClauseAnalyzer';
 import { getCase, getDocuments, deleteDocument } from '../api/client';
 
-/* ─── Tab configuration ─────────────────────────────────── */
+/* ─── Tab config (3 simple tabs only) ───────────────────── */
 const TABS = [
-  { id: 'chat',      label: 'AI Chat',    icon: MessageSquare, desc: 'RAG-powered Q&A' },
-  { id: 'documents', label: 'Documents',  icon: FileText,      desc: 'Upload & manage'  },
-  { id: 'timeline',  label: 'Timeline',   icon: Clock,         desc: 'AI-generated'     },
-  { id: 'precedent', label: 'Precedents', icon: Search,        desc: 'Case law search'  },
-  { id: 'clauses',   label: 'Clauses',    icon: Shield,        desc: 'Risk analysis'    },
+  { id: 'chat',      label: 'Ask AI',    icon: MessageSquare, desc: 'Ask questions'     },
+  { id: 'documents', label: 'Documents', icon: FileText,      desc: 'Upload files'      },
+  { id: 'timeline',  label: 'Timeline',  icon: Clock,         desc: 'Key events & dates'},
 ];
 
 const STATUS_CFG = {
-  open:      { cls: 'bg-indigo-50 text-indigo-700 border-indigo-200', label: 'Open'      },
-  in_review: { cls: 'bg-amber-50  text-amber-700  border-amber-200',  label: 'In Review' },
-  closed:    { cls: 'bg-slate-100 text-slate-500  border-slate-200',  label: 'Closed'    },
-  archived:  { cls: 'bg-slate-100 text-slate-400  border-slate-200',  label: 'Archived'  },
+  open:      { cls: 'bg-emerald-100 text-emerald-700', label: 'Active'     },
+  in_review: { cls: 'bg-amber-100  text-amber-700',   label: 'In Review'  },
+  closed:    { cls: 'bg-slate-100  text-slate-500',   label: 'Closed'     },
+  archived:  { cls: 'bg-slate-100  text-slate-400',   label: 'Archived'   },
 };
 
 const formatBytes = (b) => {
@@ -64,11 +59,13 @@ export default function CaseDetail() {
     try {
       const { data } = await getDocuments(id);
       setDocuments(data.items || []);
+      // Auto-switch to Timeline tab after a successful upload
+      setTimeout(() => setActiveTab('timeline'), 800);
     } catch {}
   }, [id]);
 
   const handleDeleteDoc = async (docId) => {
-    if (!window.confirm('Delete this document and remove it from the vector index?')) return;
+    if (!window.confirm('Remove this document from the case?')) return;
     setDeleteId(docId);
     try {
       await deleteDocument(docId);
@@ -77,17 +74,16 @@ export default function CaseDetail() {
     finally { setDeleteId(null); }
   };
 
-  /* Loading skeleton */
+  /* Loading */
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
+      <div className="min-h-screen bg-[#f5f6fa] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="relative w-14 h-14">
+          <div className="relative w-12 h-12">
             <div className="absolute inset-0 rounded-full border-4 border-indigo-100" />
-            <div className="absolute inset-0 rounded-full border-4 border-indigo-500
-                            border-t-transparent animate-spin" />
+            <div className="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin" />
           </div>
-          <p className="text-slate-500 text-sm">Loading case…</p>
+          <p className="text-slate-500 text-sm">Loading matter…</p>
         </div>
       </div>
     );
@@ -96,16 +92,14 @@ export default function CaseDetail() {
   /* 404 */
   if (!caseData) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
+      <div className="min-h-screen bg-[#f5f6fa] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
             <Scale size={28} className="text-slate-400" />
           </div>
-          <p className="font-semibold text-slate-700">Case not found</p>
-          <p className="text-sm text-slate-400 mt-1 mb-5">
-            This case may have been deleted or the ID is invalid.
-          </p>
-          <Link to="/" className="btn-primary">← Back to Dashboard</Link>
+          <p className="font-semibold text-slate-700">Matter not found</p>
+          <p className="text-sm text-slate-400 mt-1 mb-5">This matter may have been deleted.</p>
+          <Link to="/" className="btn-primary">← Back to My Matters</Link>
         </div>
       </div>
     );
@@ -114,54 +108,41 @@ export default function CaseDetail() {
   const sc = STATUS_CFG[caseData.status] || STATUS_CFG.open;
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col">
+    <div className="min-h-screen bg-[#f5f6fa] flex flex-col">
       {/* ── Sticky header ── */}
-      <header className="sticky top-0 z-30 glass border-b border-slate-200/60">
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200/80">
         {/* Case info row */}
-        <div className="max-w-7xl mx-auto px-6 h-[60px] flex items-center gap-4">
+        <div className="max-w-5xl mx-auto px-5 h-[58px] flex items-center gap-3">
           <Link to="/" className="btn-ghost p-2 rounded-xl flex-shrink-0">
-            <ArrowLeft size={17} />
+            <ArrowLeft size={16} />
           </Link>
 
-          <div className="w-px h-6 bg-slate-200 flex-shrink-0" />
+          <div className="w-px h-5 bg-slate-200 flex-shrink-0" />
 
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700
                           flex items-center justify-center flex-shrink-0 shadow-sm">
-            <Scale size={16} className="text-white" />
+            <Scale size={14} className="text-white" />
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="font-bold text-slate-900 text-[15px] truncate">{caseData.title}</h1>
-              <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${sc.cls}`}>
+              <h1 className="font-bold text-slate-900 text-[14px] truncate">{caseData.title}</h1>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sc.cls}`}>
                 {sc.label}
               </span>
             </div>
-            <p className="text-xs text-slate-500 truncate">
+            <p className="text-[11px] text-slate-500 truncate">
               {caseData.client_name}
               {' · '}
               <span className={documents.length > 0 ? 'text-emerald-600' : 'text-slate-400'}>
-                {documents.length} document{documents.length !== 1 ? 's' : ''}
+                {documents.length} file{documents.length !== 1 ? 's' : ''} uploaded
               </span>
-              {caseData.created_at && (
-                <> · Created {new Date(caseData.created_at).toLocaleDateString('en-IN', {
-                  day: 'numeric', month: 'short', year: 'numeric',
-                })}</>
-              )}
             </p>
-          </div>
-
-          {/* Case ID */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg
-                          bg-slate-100 text-[10px] font-mono text-slate-400 flex-shrink-0">
-            <Info size={10} />
-            {id.slice(0, 8)}…
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="max-w-7xl mx-auto px-6 flex gap-0 border-t border-slate-100
-                        overflow-x-auto">
+        <div className="max-w-5xl mx-auto px-5 flex gap-0 border-t border-slate-100 overflow-x-auto">
           {TABS.map(tab => {
             const Icon = tab.icon;
             return (
@@ -185,51 +166,54 @@ export default function CaseDetail() {
       </header>
 
       {/* ── Tab content ── */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
+      <main className="flex-1 max-w-5xl mx-auto w-full px-5 py-5">
 
         {/* CHAT */}
         {activeTab === 'chat' && (
-          <div className="h-[calc(100vh-145px)] min-h-[500px]">
+          <div className="h-[calc(100vh-150px)] min-h-[500px] flex flex-col gap-3">
             {documents.length === 0 && (
-              <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-50
+              <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-50
                               border border-amber-200 text-sm text-amber-700">
                 <AlertCircle size={15} className="flex-shrink-0" />
                 <span>
                   No documents uploaded yet —{' '}
                   <button
                     onClick={() => setActiveTab('documents')}
-                    className="underline underline-offset-2 font-medium hover:text-amber-900"
+                    className="underline underline-offset-2 font-semibold hover:text-amber-900"
                   >
-                    upload PDFs first
+                    upload your PDF first
                   </button>{' '}
-                  for RAG-powered answers.
+                  so AI can read and answer your questions.
                 </span>
               </div>
             )}
-            <ChatWindow caseId={id} />
+            <div className="flex-1 min-h-0">
+              <ChatWindow caseId={id} />
+            </div>
           </div>
         )}
 
         {/* DOCUMENTS */}
         {activeTab === 'documents' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Upload panel */}
-            <div className="card p-6">
-              <h2 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
-                <UploadCloud size={16} className="text-indigo-500" />
-                Upload Documents
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+              <h2 className="font-semibold text-slate-800 mb-1 flex items-center gap-2 text-sm">
+                <UploadCloud size={15} className="text-indigo-500" />
+                Upload Your Documents
               </h2>
               <p className="text-xs text-slate-400 mb-4">
-                Uploaded PDFs are indexed into the RAG vector database automatically.
+                Upload any PDF — court notice, contract, FIR, agreement. AI will read it automatically.
+                After upload, you'll be taken to the Timeline view.
               </p>
               <DocumentUpload caseId={id} onUploadSuccess={loadDocs} />
             </div>
 
             {/* Document list */}
-            <div className="card p-6">
-              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <FileText size={16} className="text-slate-500" />
-                Case Documents
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2 text-sm">
+                <FileText size={15} className="text-slate-500" />
+                Uploaded Files
                 <span className="text-xs text-slate-400 font-normal ml-auto">
                   {documents.length} file{documents.length !== 1 ? 's' : ''}
                 </span>
@@ -240,7 +224,7 @@ export default function CaseDetail() {
                   <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                     <FileText size={20} className="text-slate-300" />
                   </div>
-                  <p className="text-sm text-slate-500">No documents uploaded yet</p>
+                  <p className="text-sm text-slate-500">No files uploaded yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -250,23 +234,20 @@ export default function CaseDetail() {
                       className="flex items-center gap-3 p-3 rounded-xl border border-slate-200
                                  hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group"
                     >
-                      {/* PDF icon */}
-                      <div className="w-9 h-9 rounded-xl bg-red-100 border border-red-200
+                      <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200
                                       flex items-center justify-center flex-shrink-0">
-                        <FileText size={15} className="text-red-600" />
+                        <FileText size={14} className="text-red-500" />
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">
-                          {doc.filename}
-                        </p>
+                        <p className="text-sm font-medium text-slate-800 truncate">{doc.filename}</p>
                         <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
                           <span>{formatBytes(doc.file_size)}</span>
                           <span>·</span>
                           <span className={`flex items-center gap-1 font-medium
                             ${doc.is_indexed ? 'text-emerald-600' : 'text-amber-600'}`}>
                             {doc.is_indexed
-                              ? <><CheckCircle size={10} /> Indexed</>
+                              ? <><CheckCircle size={10} /> Ready</>
                               : <>⏳ Processing…</>}
                           </span>
                         </div>
@@ -276,11 +257,11 @@ export default function CaseDetail() {
                         onClick={() => handleDeleteDoc(doc.id)}
                         disabled={deleteId === doc.id}
                         className="opacity-0 group-hover:opacity-100 transition-opacity
-                                   btn-ghost text-red-400 hover:text-red-600 p-1.5"
+                                   btn-ghost text-red-400 hover:text-red-600 p-1.5 rounded-lg"
                       >
                         {deleteId === doc.id
-                          ? <Loader2 size={14} className="animate-spin" />
-                          : <Trash2 size={14} />}
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <Trash2 size={13} />}
                       </button>
                     </div>
                   ))}
@@ -292,22 +273,8 @@ export default function CaseDetail() {
 
         {/* TIMELINE */}
         {activeTab === 'timeline' && (
-          <div className="card p-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <CaseTimeline caseId={id} />
-          </div>
-        )}
-
-        {/* PRECEDENTS */}
-        {activeTab === 'precedent' && (
-          <div className="card p-6">
-            <PrecedentFinder />
-          </div>
-        )}
-
-        {/* CLAUSES */}
-        {activeTab === 'clauses' && (
-          <div className="card p-6">
-            <ClauseAnalyzer caseId={id} documents={documents} />
           </div>
         )}
       </main>

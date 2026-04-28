@@ -176,7 +176,7 @@ async def analyze_case_document(
     # ── 1. Resolve document record ────────────────────────────────────────────
     result = await db.execute(
         select(Document).where(
-            Document.case_id == body.case_id,
+            Document.case_id == str(body.case_id),   # cast UUID → str for SQLite
             Document.filename == body.document_name,
         )
     )

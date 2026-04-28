@@ -35,7 +35,7 @@ chromadb==0.5.0
 pymupdf==1.24.3                  # PDF extraction via fitz (primary loader)
 pypdf==4.2.0                     # fallback / metadata
 python-docx==1.1.2
-unstructured==0.13.7
+unstructured==0.14.10
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 ragas==0.1.9

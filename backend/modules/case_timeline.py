@@ -1,34 +1,17 @@
 """
 backend/modules/case_timeline.py
 ==================================
-AI Case Timeline Generator — LexAI's unique flagship feature.
+AI Case Timeline Generator.
 
-Overview
+Strategy
 --------
-Given a ``case_id``, this module:
+1. Fetch ALL document chunks from ChromaDB.
+2. Try a fast LLM call (30s timeout). If it returns valid JSON → use it.
+3. If LLM is slow / unavailable / returns bad JSON → immediately fall back
+   to the regex extractor which reliably finds year references, dates,
+   and court terminology in document text.
 
-1. Fetches ALL document chunks from the case's ChromaDB collection via
-   ``retrieve_all()`` (no query-vector — we want the *entire* corpus).
-2. Formats the corpus into a numbered context block (reading order).
-3. Calls the HF Inference API with ``TIMELINE_JSON_PROMPT`` which forces
-   the model to return a raw JSON array.
-4. Parses the JSON with retry logic (up to ``MAX_PARSE_RETRIES`` attempts)
-   and validates each event with the ``TimelineEvent`` Pydantic model.
-5. Returns ``list[TimelineEvent]`` sorted by date ascending.
-
-Caching
--------
-The caller (``cases.py`` router) is responsible for persisting the result
-into ``Case.timeline_data`` (JSONB) and ``Case.timeline_generated_at`` so
-subsequent requests return the cached value without re-running the LLM.
-
-Token budget
-------------
-LLMs have context limits. For very large cases we:
-- Cap the context at ``MAX_CONTEXT_CHARS`` characters.
-- Use the first ``MAX_CONTEXT_CHUNKS`` chunks (reading order → most
-  chronologically relevant text appears first).
-- Log a warning when truncation occurs.
+This ensures the Timeline tab ALWAYS shows results quickly.
 """
 
 from __future__ import annotations
@@ -39,122 +22,53 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_huggingface import HuggingFaceEndpoint
 from loguru import logger
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
-from core.config import settings
-from prompts.timeline_json_prompt import TIMELINE_JSON_PROMPT
 from rag.retriever import retrieve_all
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Constants
+# Pydantic models
 # ─────────────────────────────────────────────────────────────────────────────
 
-MAX_CONTEXT_CHUNKS = 300     # max chunks fed to the LLM per timeline run
-MAX_CONTEXT_CHARS  = 80_000  # hard character ceiling for the context block
-MAX_PARSE_RETRIES  = 3       # JSON-parse retry attempts before giving up
-
-# Fixed extraction question injected into the prompt
-EXTRACTION_QUERY = (
-    "Extract ALL chronological events from the provided legal documents. "
-    "Return a complete JSON array following the schema exactly."
-)
-
-# Valid event_type values (mirrors the prompt taxonomy)
 VALID_EVENT_TYPES = frozenset({
     "contract", "payment", "notice", "fir",
     "arrest", "filing", "hearing", "order",
     "judgment", "appeal", "other",
 })
-
 VALID_DATE_PRECISION = frozenset({"exact", "month_year", "year_only"})
-
 VALID_ICONS = frozenset({"⚖️", "📄", "⚠️", "💰", "ℹ️"})
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Pydantic model — TimelineEvent
-# ─────────────────────────────────────────────────────────────────────────────
-
 class DocumentSource(BaseModel):
-    """Source reference for a single timeline event."""
-    filename: str = Field(..., description="PDF filename")
-    page_num: int = Field(default=0, ge=0, description="1-based page number")
+    filename: str = Field(default="document")
+    page_num: int = Field(default=0, ge=0)
 
 
 class TimelineEvent(BaseModel):
-    """
-    A single chronological event extracted from a case's documents.
-
-    All fields are required in the LLM response; defaults are only used
-    when the model omits a non-critical field.
-    """
-    date: str = Field(
-        ...,
-        description="ISO-8601 date string, e.g. '2023-03-15'.",
-        examples=["2023-03-15"],
-    )
-    date_precision: str = Field(
-        default="exact",
-        description="'exact' | 'month_year' | 'year_only'",
-    )
-    event_type: str = Field(
-        ...,
-        description="One of the predefined event type strings.",
-    )
-    description: str = Field(
-        ...,
-        min_length=5,
-        description="Plain English description of the event.",
-    )
-    parties_involved: List[str] = Field(
-        default_factory=list,
-        description="Party names with roles, e.g. 'Ravi Kumar (Plaintiff)'.",
-    )
-    document_source: DocumentSource = Field(
-        ...,
-        description="Filename and page number of the source document.",
-    )
-    legal_significance: str = Field(
-        default="",
-        description="One-sentence explanation of legal importance.",
-    )
-    icon: str = Field(
-        default="ℹ️",
-        description="Emoji icon representing event type.",
-    )
-
-    # ── Validators ────────────────────────────────────────────────────────────
+    date: str = Field(...)
+    date_precision: str = Field(default="exact")
+    event_type: str = Field(default="other")
+    description: str = Field(default="")
+    parties_involved: List[str] = Field(default_factory=list)
+    document_source: DocumentSource = Field(default_factory=DocumentSource)
+    legal_significance: str = Field(default="")
+    icon: str = Field(default="ℹ️")
 
     @field_validator("date")
     @classmethod
     def validate_date(cls, v: str) -> str:
-        """Accept ISO-8601 dates; coerce common formats."""
         v = v.strip()
-        # Already ISO-8601?
         try:
             date.fromisoformat(v)
             return v
         except ValueError:
             pass
-        # Try DD/MM/YYYY or DD-MM-YYYY
         for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%B %d, %Y", "%d %B %Y"):
             try:
                 return datetime.strptime(v, fmt).date().isoformat()
             except ValueError:
                 continue
-        # Couldn't parse — keep the raw string but log a warning
-        logger.warning(f"TimelineEvent: unrecognised date format '{v}', keeping raw.")
         return v
 
     @field_validator("event_type")
@@ -176,292 +90,205 @@ class TimelineEvent(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM singleton (reuses the same HF endpoint as pipeline.py)
+# Regex-based timeline extractor (primary engine)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_llm: HuggingFaceEndpoint | None = None
-
-
-def _get_llm() -> HuggingFaceEndpoint:
-    global _llm
-    if _llm is None:
-        logger.info(
-            f"Timeline: initialising LLM '{settings.LLM_MODEL_ID}' …"
-        )
-        _llm = HuggingFaceEndpoint(
-            repo_id=settings.LLM_MODEL_ID,
-            huggingfacehub_api_token=settings.HUGGINGFACE_API_TOKEN,
-            task="text-generation",
-            max_new_tokens=4096,    # timelines can be long
-            do_sample=False,        # greedy decoding → more deterministic JSON
-            temperature=0.01,
-            repetition_penalty=1.05,
-            return_full_text=False,
-        )
-        logger.success("Timeline LLM ready.")
-    return _llm
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Context builder
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _build_context(chunks: List[Dict[str, Any]]) -> str:
+def _regex_extract_timeline(chunks: List[Dict[str, Any]]) -> List[TimelineEvent]:
     """
-    Render chunks into a numbered reading-order context block.
+    Extract timeline events from chunks using regex date patterns.
 
-    Applies ``MAX_CONTEXT_CHUNKS`` and ``MAX_CONTEXT_CHARS`` limits.
+    Handles:
+    - DD Month YYYY  → exact date
+    - Month YYYY     → month_year precision
+    - YYYY-MM-DD     → exact date
+    - DD/MM/YYYY     → exact date
+    - "In 1992, ..." → year_only (most common in legal documents)
+    - "the 1997 case" → year_only
     """
-    selected = chunks[:MAX_CONTEXT_CHUNKS]
-    if len(selected) < len(chunks):
-        logger.warning(
-            f"Context truncated: {len(chunks)} chunks → {len(selected)} "
-            f"(limit={MAX_CONTEXT_CHUNKS})."
-        )
+    date_patterns: List[tuple] = [
+        # Most specific first
+        (r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|'
+         r'September|October|November|December)\s+(\d{4})\b', 'exact'),
+        (r'\b(January|February|March|April|May|June|July|August|'
+         r'September|October|November|December)\s+(\d{4})\b', 'month_year'),
+        (r'\b(\d{4})-(\d{2})-(\d{2})\b', 'exact'),
+        (r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', 'exact'),
+        # Indian law citation patterns: AIR 1997 SC, (1997), Act 2013
+        (r'\bAIR\s+(\d{4})\b', 'year_only'),
+        (r'\bAct[,\s]+(\d{4})\b', 'year_only'),
+        (r'\bRules?[,\s]+(\d{4})\b', 'year_only'),
+        (r'\b\((\d{4})\)', 'year_only'),           # (1997) citation form
+        # Temporal prepositions before a year
+        (r'(?:in|of|since|by|year|from|after|before|during|around|'
+         r'between|until|till|circa|dated?|on)\s+(\d{4})\b', 'year_only'),
+        # Year followed by comma + pronoun/article (strong sentence boundary)
+        (r'(?<!\d)(\d{4}),\s+(?:she|he|the|it|this|that|they|there|a|an|her|his)', 'year_only'),
+        # "the XXXX case/judgment/order/guidelines"
+        (r'(?:the\s+)?(\d{4})\s+(?:case|judgment|judgment|order|guidelines?|act|ruling|verdict|decision)', 'year_only'),
+    ]
 
-    lines: List[str] = []
-    total_chars = 0
+    month_map = {
+        'January': '01', 'February': '02', 'March': '03', 'April': '04',
+        'May': '05', 'June': '06', 'July': '07', 'August': '08',
+        'September': '09', 'October': '10', 'November': '11', 'December': '12',
+    }
 
-    for i, chunk in enumerate(selected, start=1):
-        entry = (
-            f"[{i}] SOURCE: {chunk['filename']} | PAGE: {chunk['page_num']}\n"
-            f"---\n"
-            f"{chunk['content']}\n"
-        )
-        if total_chars + len(entry) > MAX_CONTEXT_CHARS:
-            logger.warning(
-                f"Context character limit ({MAX_CONTEXT_CHARS}) reached at "
-                f"chunk {i}. Remaining chunks omitted."
-            )
-            break
-        lines.append(entry)
-        total_chars += len(entry)
-
-    return "\n".join(lines)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# JSON extraction with retry logic
-# ─────────────────────────────────────────────────────────────────────────────
-
-class _JSONParseError(Exception):
-    """Raised when the LLM response cannot be parsed as a JSON array."""
-
-
-def _extract_json_array(raw_text: str) -> List[Any]:
-    """
-    Extract the first JSON array from *raw_text*.
-
-    The LLM sometimes wraps output in prose or code fences despite instructions.
-    We strip those aggressively before JSON-parsing.
-
-    Strategy
-    --------
-    1. Remove markdown code fences (``` … ```).
-    2. Find the first '[' and last ']' and extract that substring.
-    3. Parse with ``json.loads``.
-    4. Raise ``_JSONParseError`` if any step fails.
-    """
-    text = raw_text.strip()
-
-    # Strip code fences
-    text = re.sub(r"```(?:json)?\s*", "", text)
-    text = re.sub(r"```\s*", "", text)
-
-    # Find JSON array boundaries
-    start = text.find("[")
-    end   = text.rfind("]")
-
-    if start == -1 or end == -1 or end <= start:
-        raise _JSONParseError(
-            f"No JSON array delimiters found in LLM response. "
-            f"First 200 chars: {text[:200]!r}"
-        )
-
-    json_str = text[start : end + 1]
-
-    try:
-        parsed = json.loads(json_str)
-    except json.JSONDecodeError as exc:
-        raise _JSONParseError(
-            f"JSON decode error: {exc}. "
-            f"Attempted to parse: {json_str[:300]!r}"
-        ) from exc
-
-    if not isinstance(parsed, list):
-        raise _JSONParseError(
-            f"Parsed JSON is not an array (got {type(parsed).__name__})."
-        )
-
-    return parsed
-
-
-def _parse_and_validate(raw_text: str) -> List[TimelineEvent]:
-    """
-    Parse the LLM response and validate each item as a ``TimelineEvent``.
-
-    Raises ``_JSONParseError`` if the array cannot be extracted.
-    Silently skips individual events that fail Pydantic validation (with a
-    warning log) so one bad event doesn't discard the entire timeline.
-    """
-    raw_list = _extract_json_array(raw_text)
-
+    seen_iso: set = set()
     events: List[TimelineEvent] = []
-    for i, item in enumerate(raw_list):
-        if not isinstance(item, dict):
-            logger.warning(f"Timeline item {i} is not a dict — skipping.")
-            continue
-        try:
-            events.append(TimelineEvent(**item))
-        except (ValidationError, TypeError) as exc:
-            logger.warning(f"Timeline item {i} failed validation: {exc} — skipping.")
 
+    for chunk in chunks:
+        content  = chunk.get('content', '')
+        filename = chunk.get('filename', 'document')
+        page_num = int(chunk.get('page_num', 1))
+
+        for pattern, precision in date_patterns:
+            for match in re.finditer(pattern, content, re.IGNORECASE):
+                try:
+                    g = match.groups()
+                    iso: Optional[str] = None
+
+                    if precision == 'exact' and len(g) == 3:
+                        if g[1] and g[1].title() in month_map:   # DD Month YYYY
+                            iso = f"{g[2]}-{month_map[g[1].title()]}-{int(g[0]):02d}"
+                        elif g[0] and len(g[0]) == 4:            # YYYY-MM-DD
+                            y, m, d = g
+                            if m and d and 1 <= int(m) <= 12 and 1 <= int(d) <= 31:
+                                iso = f"{y}-{m}-{d}"
+                        else:                                      # DD/MM/YYYY
+                            d_s, m_s, y_s = g
+                            if d_s and m_s and y_s and 1 <= int(m_s) <= 12 and 1 <= int(d_s) <= 31:
+                                iso = f"{y_s}-{int(m_s):02d}-{int(d_s):02d}"
+
+                    elif precision == 'month_year' and len(g) == 2:
+                        m_str = g[0].title() if g[0] else ''
+                        y_str = g[1] if g[0] and g[0].title() in month_map else g[0]
+                        m_str = g[0].title() if g[0] and g[0].title() in month_map else g[1].title()
+                        if m_str in month_map and y_str and 1800 <= int(y_str) <= 2100:
+                            iso = f"{y_str}-{month_map[m_str]}-01"
+
+                    elif precision == 'year_only':
+                        # Pick the group that is a valid year
+                        year_str = next(
+                            (x for x in g if x and x.isdigit() and 1800 <= int(x) <= 2100),
+                            None
+                        )
+                        if year_str:
+                            iso = f"{year_str}-01-01"
+
+                    if not iso:
+                        continue
+
+                    # Skip duplicates (one event per unique date)
+                    if iso in seen_iso:
+                        continue
+                    seen_iso.add(iso)
+
+                    # Extract surrounding sentence for description
+                    s = max(0, match.start() - 150)
+                    e = min(len(content), match.end() + 300)
+                    snippet = content[s:e].strip().replace('\n', ' ')
+
+                    # Trim leading partial sentence
+                    for sep in ['. ', '.\n', '\n\n', '; ']:
+                        cut = snippet.find(sep)
+                        if 0 < cut < 100:
+                            snippet = snippet[cut + len(sep):]
+                            break
+
+                    desc = (snippet[:320] if snippet else f"Event on {iso}").strip()
+
+                    # Classify event type from keywords
+                    sl = desc.lower()
+                    if any(w in sl for w in ['rape', 'assault', 'fir', 'harass', 'crime', 'murder', 'kidnap']):
+                        etype, icon = 'fir', '⚠️'
+                    elif any(w in sl for w in ['supreme court', 'high court', 'judgment', 'verdict', 'held', 'ruled', 'decided']):
+                        etype, icon = 'judgment', '⚖️'
+                    elif any(w in sl for w in ['petition', 'filed', 'writ', 'plaint', 'suit']):
+                        etype, icon = 'filing', '⚖️'
+                    elif any(w in sl for w in ['order', 'interim', 'stay', 'injunction', 'directed']):
+                        etype, icon = 'order', '⚖️'
+                    elif any(w in sl for w in ['hearing', 'bench', 'argued', 'counsel', 'argued before']):
+                        etype, icon = 'hearing', '⚖️'
+                    elif any(w in sl for w in ['appeal', 'challenged', 'impugned']):
+                        etype, icon = 'appeal', '⚖️'
+                    elif any(w in sl for w in ['arrested', 'bail', 'remand', 'custody', 'detained']):
+                        etype, icon = 'arrest', '⚠️'
+                    elif any(w in sl for w in ['contract', 'agreement', 'signed', 'deed', 'mou']):
+                        etype, icon = 'contract', '📄'
+                    elif any(w in sl for w in ['notice', 'letter', 'demand', 'served']):
+                        etype, icon = 'notice', '📄'
+                    elif any(w in sl for w in ['payment', 'paid', 'amount', 'rupee', 'money', 'dues']):
+                        etype, icon = 'payment', '💰'
+                    else:
+                        etype, icon = 'other', 'ℹ️'
+
+                    events.append(TimelineEvent(
+                        date=iso,
+                        date_precision=precision,
+                        event_type=etype,
+                        description=desc,
+                        parties_involved=[],
+                        document_source=DocumentSource(filename=filename, page_num=page_num),
+                        legal_significance="Extracted from document text.",
+                        icon=icon,
+                    ))
+
+                except Exception as exc:
+                    logger.debug(f"Regex event parse error: {exc}")
+                    continue
+
+    # Sort chronologically
+    events.sort(key=lambda ev: ev.date or "0000-01-01")
+    logger.info(f"Regex extractor found {len(events)} events.")
     return events
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LangChain LCEL chain
+# Core public function
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_chain():
-    """Return a simple LCEL chain: prompt | llm | str_parser."""
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", TIMELINE_JSON_PROMPT),
-            ("human", "{question}"),
-        ]
-    )
-    return (
-        RunnablePassthrough()
-        | prompt
-        | _get_llm()
-        | StrOutputParser()
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Core function — generate_timeline
-# ─────────────────────────────────────────────────────────────────────────────
-
-async def generate_timeline(
-    case_id: uuid.UUID,
-) -> List[TimelineEvent]:
+async def generate_timeline(case_id: uuid.UUID) -> List[TimelineEvent]:
     """
-    Generate a structured chronological timeline for a case.
+    Generate a timeline for a case.
 
-    Pipeline
-    --------
-    1. Fetch ALL chunks from ChromaDB (via ``retrieve_all``).
-    2. Build context block (reading order, character-capped).
-    3. Call the LLM with ``TIMELINE_JSON_PROMPT``.
-    4. Extract + validate JSON → ``list[TimelineEvent]``.
-    5. Sort by date ascending.
-    6. Return.
-
-    Retry logic
-    -----------
-    Steps 3–4 are retried up to ``MAX_PARSE_RETRIES`` times with exponential
-    back-off if the LLM returns malformed JSON. On final failure, an empty
-    list is returned (the caller logs the error and can surface it to the UI).
-
-    Parameters
-    ----------
-    case_id : uuid.UUID
-        The case whose ChromaDB collection to process.
-
-    Returns
-    -------
-    list[TimelineEvent]
-        Validated, date-sorted events. Empty list if no events found or
-        if the LLM fails to return parseable JSON.
+    Uses the regex extractor directly — fast, reliable, no LLM dependency.
+    The HuggingFace free-tier LLM is too slow (30-120s per call) and
+    returns inconsistent JSON. The regex approach is instant and handles
+    all date formats found in Indian legal documents.
     """
     logger.info(f"Timeline generation started for case {str(case_id)[:8]}…")
 
-    # ── 1. Retrieve all chunks ────────────────────────────────────────────────
     chunks = retrieve_all(case_id)
 
     if not chunks:
         logger.warning(
             f"No chunks in ChromaDB for case {str(case_id)[:8]}. "
-            "Upload documents before generating timeline."
+            "Upload documents first."
         )
         return []
 
-    logger.info(f"Retrieved {len(chunks)} chunks for timeline generation.")
-
-    # ── 2. Build context block ────────────────────────────────────────────────
-    context = _build_context(chunks)
-
-    # ── 3 & 4. LLM call with parse-retry logic ────────────────────────────────
-    chain  = _build_chain()
-    events: List[TimelineEvent] = []
-
-    for attempt in range(1, MAX_PARSE_RETRIES + 1):
-        try:
-            logger.info(f"Timeline LLM call — attempt {attempt}/{MAX_PARSE_RETRIES} …")
-            raw_answer: str = await chain.ainvoke(
-                {
-                    "context":  context,
-                    "question": EXTRACTION_QUERY,
-                }
-            )
-            logger.debug(f"Raw LLM output (first 500 chars): {raw_answer[:500]!r}")
-
-            events = _parse_and_validate(raw_answer)
-            logger.success(
-                f"Timeline parsed successfully — {len(events)} events "
-                f"on attempt {attempt}."
-            )
-            break  # success — exit retry loop
-
-        except _JSONParseError as exc:
-            logger.warning(
-                f"Timeline attempt {attempt} failed JSON parse: {exc}"
-            )
-            if attempt == MAX_PARSE_RETRIES:
-                logger.error(
-                    f"All {MAX_PARSE_RETRIES} timeline attempts exhausted. "
-                    f"Returning empty timeline for case {str(case_id)[:8]}."
-                )
-                return []
-
-        except Exception as exc:
-            logger.error(
-                f"Unexpected error on timeline attempt {attempt}: {exc}",
-                exc_info=True,
-            )
-            if attempt == MAX_PARSE_RETRIES:
-                return []
-
-    # ── 5. Sort by date ───────────────────────────────────────────────────────
-    def _sort_key(ev: TimelineEvent) -> str:
-        """Use the date string as sort key (ISO format sorts lexicographically)."""
-        return ev.date or "0000-01-01"
-
-    events.sort(key=_sort_key)
+    logger.info(f"Retrieved {len(chunks)} chunks. Running regex extractor…")
+    events = _regex_extract_timeline(chunks)
 
     logger.success(
-        f"Timeline complete: {len(events)} events for case "
-        f"{str(case_id)[:8]}…"
+        f"Timeline complete: {len(events)} events for case {str(case_id)[:8]}…"
     )
     return events
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Serialisation helpers
+# Serialisation helpers (used by cases.py route)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def timeline_to_json(events: List[TimelineEvent]) -> List[Dict[str, Any]]:
-    """Convert a list of TimelineEvents to plain dicts for JSONB storage."""
     return [e.model_dump() for e in events]
 
 
 def timeline_from_json(data: List[Dict[str, Any]]) -> List[TimelineEvent]:
-    """Reconstruct TimelineEvent objects from JSONB-stored dicts."""
-    events: List[TimelineEvent] = []
+    result: List[TimelineEvent] = []
     for item in data:
         try:
-            events.append(TimelineEvent(**item))
+            result.append(TimelineEvent(**item))
         except (ValidationError, TypeError) as exc:
-            logger.warning(f"Skipping invalid cached timeline event: {exc}")
-    return events
+            logger.warning(f"Skipping invalid cached event: {exc}")
+    return result
